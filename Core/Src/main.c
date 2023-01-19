@@ -63,8 +63,9 @@ uint32_t canMailbox;           // CAN Bus Mail box variable
 uint8_t speed = 0;
 uint8_t cnt_421 = 0;
 uint8_t p_n = 0;
-uint8_t gear;
+uint8_t gear = 0;
 uint8_t p_n_422;
+uint8_t hand_brake = 0xF9;				// Hand brake indicator, by default is ON
 
 /* USER CODE END 0 */
 
@@ -104,15 +105,17 @@ int main(void) {
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1) {
-    if (speed < 2)
-      p_n_422 = 0x05;
-    else
-      p_n_422 = 0x04;
-    if (speed > 0 && speed < 15) gear = 0x01;
-    if (speed > 15 && speed < 30) gear = 0x02;
-    if (speed > 30 && speed < 60) gear = 0x03;
-    if (speed > 60) gear = 0x04;
-
+    if (hand_brake == 0xF9) { // if hand brake is 0xF9 or ON - going to parking
+      p_n_422 = 0x07;
+      gear = 0x01;
+    }
+    else {
+      p_n_422 = 0x01;			// else going to AT selector position 2 to avoid shifts
+      gear = 0x02;				// Always second gear to avoid kick down
+    //if (speed > 0 && speed < 5) gear = 0x01;
+    //if (speed > 10 && speed < 100) gear = 0x02;
+    //if (speed > 100) gear = 0x04;
+    }
     txHeader.DLC = 8;
     txHeader.IDE = CAN_ID_STD;
     txHeader.RTR = CAN_RTR_DATA;
@@ -127,7 +130,7 @@ int main(void) {
     HAL_CAN_AddTxMessage(&hcan1, &txHeader, can_send_421, &canMailbox);
     HAL_Delay(2);
     uint8_t can_send_420[8] = {
-        0, gear * 0x10 + gear, 0x01, 0x37, 0, 0x40, 0xf9, 0x04};
+        0, gear * 0x10 + gear, 0x01, 0x37, 0, 0x40, hand_brake, 0x04};
     txHeader.StdId = 0x420;
     txHeader.TransmitGlobalTime = DISABLE;
     HAL_CAN_AddTxMessage(&hcan1, &txHeader, can_send_420, &canMailbox);
@@ -242,6 +245,14 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
   if (HAL_CAN_GetRxMessage(&hcan1, CAN_RX_FIFO0, &rxHeader, canRx) == HAL_OK) {
     if (rxHeader.StdId == 0x513) {
       speed = canRx[0] * 5 / 100 + canRx[1] * 0xff * 5 / 100;
+    }
+    if (rxHeader.StdId == 0x420) {		// Check hand brake state.
+    	if (canRx[6] == 0xF9) {
+    		hand_brake = 0xF9;			// Hand brake is ON
+    	}
+    	else if (canRx[6] == 0xFB) {
+    	    hand_brake = 0xFB;			// Hand brake is OFF
+    	}
     }
   }
 }
